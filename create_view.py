@@ -6,11 +6,7 @@
 # @File    : create_view.py
 # @Software:
 
-import os
-
-
 import psycopg2
-import re
 import ConfigParser
 
 
@@ -22,7 +18,6 @@ pwd_cus = db.get("db","passwd")
 db_cus = db.get("db","database")
 port_cus = db.get("db","port")
 table_name = db.get("tb","tablename")
-prim_key = db.get("tb","primarykey")
 
 
 class PGINFO:
@@ -72,6 +67,28 @@ class PGINFO:
             self.conn.commit()
 
 
+def found_key(table_name1):
+    pg = PGINFO(host=host_cus, user=user_cus, pwd=pwd_cus, db=db_cus, port=port_cus)
+    print "正在查询给定表的主键"
+    found_sql = "SELECT pg_attribute.attname AS colname " \
+                "FROM pg_constraint " \
+                "INNER JOIN pg_class ON pg_constraint.conrelid = pg_class.oid 	" \
+                "INNER JOIN pg_attribute " \
+                "ON pg_attribute.attrelid = pg_class.oid " \
+                "AND pg_attribute.attnum = pg_constraint.conkey[1] " \
+                "INNER JOIN pg_type ON pg_type.oid = pg_attribute.atttypid " \
+                "WHERE pg_class.relname = '"+table_name1+"'AND " \
+                " pg_constraint.contype = 'p';"
+    cur = pg.ExecQuery(found_sql)
+    a = cur.fetchone()
+    #print a
+    b = a[0]
+    prim_key = str(b)
+    print  "该表的主键是 "+prim_key
+    return prim_key
+
+prim_key = found_key(table_name)
+print prim_key
 
 def create():
     pg = PGINFO(host=host_cus, user=user_cus, pwd=pwd_cus, db=db_cus, port=port_cus)
@@ -108,23 +125,27 @@ def create():
 def Create_vw():
     pg = PGINFO(host=host_cus, user=user_cus, pwd=pwd_cus, db=db_cus, port=port_cus)
     print "正在创建动态视图"
-    get_columns = "select column_name from information_schema.columns where table_schema='public' and table_name='"+table_name+"';"
+    get_columns = "select column_name,data_type from information_schema.columns where table_schema='public' and table_name='"+table_name+"';"
     cur = pg.ExecQuery(get_columns)
     colu  = cur.fetchall()
     col_1 = "1 AS x___action, NULL AS x_ctid"
     col_2 = "2 AS x___action, NULL AS x_ctid"
     col_3 = "3 AS x___action,ctid::varchar AS x_ctid"
     for i in colu:
-        a = str(i)
-        b = a.split("'")
-        col_1 = col_1+","+b[1]+"::text"
-        col_2 = col_2+",null as "+b[1]
-        col_3 = col_3+",null as "+b[1]
+        a_colname = i[0]
+        print a_colname
+        b_coltype = i[1]
+        print b_coltype
+        a = str(a_colname)
+        b = str(b_coltype)
+        col_1 = col_1+","+a+"::"+b
+        col_2 = col_2+",null ::"+b+" as "+a
+        col_3 = col_3+",null ::"+b+" as "+a
+
     print "检测col是否正常"
     print col_1
     print col_2
     print col_3
-
     create_veiw = "CREATE VIEW vw_"+table_name+" " \
                     "AS " \
                     "SELECT "+col_1+" " \
@@ -133,10 +154,9 @@ def Create_vw():
                     "SELECT 1 FROM c_"+table_name+" b WHERE a."+prim_key+" = b."+prim_key+" ) " \
                     "UNION ALL " \
                     "SELECT DISTINCT "+col_2+" FROM c_"+table_name+" a  " \
-                    "WHERE NOT EXISTS ( SELECT 1 FROM test01 b  WHERE a."+prim_key+" = b."+prim_key+" )" \
+                    "WHERE NOT EXISTS ( SELECT 1 FROM "+table_name+" b  WHERE a."+prim_key+" = b."+prim_key+" )" \
                     " UNION ALL " \
                     "SELECT "+col_3+" FROM c_"+table_name+";"
-
     pg.Execute(create_veiw)
     pg.Execute('close')
     print "视图创建完毕"
@@ -144,7 +164,7 @@ def Create_vw():
 
 
 def main():
-    create()
+    #create()
     Create_vw()
     return
 
