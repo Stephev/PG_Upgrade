@@ -12,11 +12,22 @@ import ConfigParser
 
 db = ConfigParser.ConfigParser()
 db.read('database.conf')
-host_cus = db.get("db","host")
-user_cus = db.get("db","user")
-pwd_cus = db.get("db","passwd")
-db_cus = db.get("db","database")
-port_cus = db.get("db","port")
+host_PG8 = db.get("PG8_db","host")
+user_PG8 = db.get("PG8_db","user")
+pwd_PG8 = db.get("PG8_db","passwd")
+db_PG8 = db.get("PG8_db","database")
+port_PG8 = db.get("PG8_db","port")
+
+
+host_PG10 = db.get("PG10_db","host")
+user_PG10 = db.get("PG10_db","user")
+pwd_PG10 = db.get("PG10_db","passwd")
+db_PG10 = db.get("PG10_db","database")
+port_PG10 = db.get("PG10_db","port")
+foreign_name = db.get("PG10_db","foreign_servername")
+
+
+table_schema = db.get("tb","table_schema")
 table_name = db.get("tb","tablename")
 
 
@@ -68,7 +79,7 @@ class PGINFO:
 
 
 def found_key(table_name1):
-    pg = PGINFO(host=host_cus, user=user_cus, pwd=pwd_cus, db=db_cus, port=port_cus)
+    pg = PGINFO(host=host_PG8, user=user_PG8, pwd=pwd_PG8, db=db_PG8, port=port_PG8)
     print "正在查询给定表的主键"
     found_sql = "SELECT pg_attribute.attname AS colname " \
                 "FROM pg_constraint " \
@@ -85,17 +96,18 @@ def found_key(table_name1):
     b = a[0]
     prim_key = str(b)
     print  "该表的主键是 "+prim_key
+    pg.Execute('close')
     return prim_key
 
 prim_key = found_key(table_name)
-print prim_key
+#print prim_key
 
-def create():
-    pg = PGINFO(host=host_cus, user=user_cus, pwd=pwd_cus, db=db_cus, port=port_cus)
+
+def Create_TRI():
+    pg = PGINFO(host=host_PG8, user=user_PG8, pwd=pwd_PG8, db=db_PG8, port=port_PG8)
     print "正在创建记录主键变化表"
     create_ta = "create table c_"+table_name+"("+prim_key+" int);"
     pg.Execute(create_ta)
-
     print "正在创建触发器函数"
     create_fun = "create or replace function f_tri_"+table_name+"()" \
                  " returns trigger as $$" \
@@ -116,16 +128,18 @@ def create():
                     "END $$ language plpgsql;"
     pg.Execute(create_fun)
     print "创建触发器"
-    create_trigger = "create trigger tri_c_"+table_name+" after delete or update or insert on "+table_name+" for each row execute procedure f_tri_"+table_name+"();"
+    create_trigger = "create trigger tri_c_"+table_name+" after delete or update or insert " \
+                     "on "+table_name+" for each row execute procedure f_tri_"+table_name+"();"
     pg.Execute(create_trigger)
     pg.Execute('close')
     return
 
 
 def Create_vw():
-    pg = PGINFO(host=host_cus, user=user_cus, pwd=pwd_cus, db=db_cus, port=port_cus)
+    pg = PGINFO(host=host_PG8, user=user_PG8, pwd=pwd_PG8, db=db_PG8, port=port_PG8)
     print "正在创建动态视图"
-    get_columns = "select column_name,data_type from information_schema.columns where table_schema='public' and table_name='"+table_name+"';"
+    get_columns = "select column_name,data_type from information_schema.columns " \
+                  "where table_schema='public' and table_name='"+table_name+"';"
     cur = pg.ExecQuery(get_columns)
     colu  = cur.fetchall()
     col_1 = "1 AS x___action, NULL AS x_ctid"
@@ -141,11 +155,10 @@ def Create_vw():
         col_1 = col_1+","+a+"::"+b
         col_2 = col_2+",null ::"+b+" as "+a
         col_3 = col_3+",null ::"+b+" as "+a
-
-    print "检测col是否正常"
-    print col_1
-    print col_2
-    print col_3
+    #print "检测col是否正常"
+    #print col_1
+    #print col_2
+    #print col_3
     create_veiw = "CREATE VIEW vw_"+table_name+" " \
                     "AS " \
                     "SELECT "+col_1+" " \
@@ -163,9 +176,35 @@ def Create_vw():
     return
 
 
+def Create_FORE():
+    print "正在为Pg10 库创建视图外部表"
+    pg = PGINFO(host=host_PG8, user=user_PG8, pwd=pwd_PG8, db=db_PG8, port=port_PG8)
+    get_vw = "select column_name,data_type from information_schema.columns " \
+             "where table_schema='"+table_schema+"' and table_name='"+table_name+"';"
+    cur = pg.ExecQuery(get_vw)
+    col = cur.fetchall()
+    colun_name = "x___action smallint NOT NULL,x_ctid text"
+    for i in col:
+        a_colname = i[0]
+        #print a_colname
+        b_coltype = i[1]
+        #print b_coltype
+        a = str(a_colname)
+        b = str(b_coltype)
+        colun_name = colun_name+","+a+" "+b
+    pg.Execute('close')
+    create_foreign = "create foreign table fdw_vw_"+table_name+"("+colun_name+") " \
+                    "server "+foreign_name+" options (table_name 'vw_"+table_name+"');"
+    pg10 = PGINFO(host=host_PG10, user=user_PG10, pwd=pwd_PG10, db=db_PG10, port=port_PG10)
+    pg10.Execute(create_foreign)
+    pg10.Execute('close')
+    print "创建外部表成功"
+
+
 def main():
-    #create()
+    Create_TRI()
     Create_vw()
+    Create_FORE()
     return
 
 
